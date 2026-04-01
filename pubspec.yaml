@@ -1,4 +1,4 @@
-name: media_player
+name: mediaplay
 description: "A media player designed using flutter/dart"
 publish_to: 'none'
 

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:media_player/main.dart';
+import 'package:mediaplay/main.dart';
 
 void main() {
   testWidgets('MediaPlay app smoke test', (WidgetTester tester) async {

@@ -1,4 +1,4 @@
-# media_player
+# MediaPlay
 
 A media player designed using flutter/dart
 
