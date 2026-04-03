@@ -91,6 +91,10 @@ void _openMediaPlayer(BuildContext context, MediaFile file) {
   );
 }
 
+String _displayName(MediaProvider provider, MediaFile file) {
+  return provider.displayName(file);
+}
+
 class _AnimatedBottomNavBar extends StatelessWidget {
   final int currentIndex;
   final List<({IconData icon, String label})> items;
@@ -299,6 +303,12 @@ class SettingsScreen extends StatelessWidget {
                 value: provider.showFileSize,
                 onChanged: provider.setShowFileSize,
               ),
+              _SettingsSwitchRow(
+                title: 'Show file extensions',
+                subtitle: 'Display extensions like .mp3 and .mp4',
+                value: provider.showFileExtensions,
+                onChanged: provider.setShowFileExtensions,
+              ),
             ],
           ),
           const SizedBox(height: 26),
@@ -435,7 +445,7 @@ class _BrowseRecentRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final provider = Provider.of<MediaProvider>(context, listen: false);
+    final provider = Provider.of<MediaProvider>(context);
 
     return _SettingsRowShell(
       showDivider: showDivider,
@@ -453,7 +463,7 @@ class _BrowseRecentRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    file.name,
+                    _displayName(provider, file),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w500),
@@ -709,7 +719,7 @@ class _PlaylistCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final provider = Provider.of<MediaProvider>(context, listen: false);
+    final provider = Provider.of<MediaProvider>(context);
     final preview = playlist.items.take(3).toList();
 
     return Material(
@@ -723,15 +733,18 @@ class _PlaylistCard extends StatelessWidget {
             ),
           );
         },
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(10),
         child: Ink(
           decoration: BoxDecoration(
             color: _appSurface,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withOpacity(0.05)),
+            borderRadius: BorderRadius.circular(10),
+            border: Border(
+              top: BorderSide(color: Colors.white.withOpacity(0.08)),
+              bottom: BorderSide(color: Colors.white.withOpacity(0.08)),
+            ),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -741,8 +754,8 @@ class _PlaylistCard extends StatelessWidget {
                       width: 52,
                       height: 52,
                       decoration: BoxDecoration(
-                        color: _appAccent.withOpacity(0.16),
-                        borderRadius: BorderRadius.circular(14),
+                        color: Colors.white.withOpacity(0.04),
+                        borderRadius: BorderRadius.circular(10),
                       ),
                       child: const Icon(Icons.queue_music_rounded, color: _appAccent),
                     ),
@@ -765,11 +778,11 @@ class _PlaylistCard extends StatelessWidget {
                     ),
                     IconButton(
                       onPressed: () => _showPlaylistMenu(context, provider, playlist),
-                      icon: const Icon(Icons.more_horiz, color: Colors.blueGrey),
+                      icon: const Icon(Icons.more_horiz, color: Colors.blueGrey, size: 20),
                     ),
                   ],
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 12),
                 if (preview.isEmpty)
                   const Text(
                     'This playlist is empty. Add media from the Library tab.',
@@ -782,13 +795,14 @@ class _PlaylistCard extends StatelessWidget {
                     children: preview
                         .map(
                           (file) => Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                             decoration: BoxDecoration(
                               color: Colors.white.withOpacity(0.04),
-                              borderRadius: BorderRadius.circular(999),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.white.withOpacity(0.05)),
                             ),
                             child: Text(
-                              file.name,
+                              _displayName(provider, file),
                               style: const TextStyle(fontSize: 12, color: Colors.white70),
                             ),
                           ),
@@ -887,16 +901,21 @@ class PlaylistDetailScreen extends StatelessWidget {
               itemCount: playlist.items.length,
               itemBuilder: (context, index) {
                 final file = playlist.items[index];
-                return Card(
-                  color: _appSurface,
+                return Container(
                   margin: const EdgeInsets.only(bottom: 10),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  decoration: BoxDecoration(
+                    color: _appSurface,
+                    border: Border(
+                      top: BorderSide(color: Colors.white.withOpacity(0.08)),
+                      bottom: BorderSide(color: Colors.white.withOpacity(0.08)),
+                    ),
+                  ),
                   child: ListTile(
                     onTap: () {
                       _openMediaPlayer(context, file);
                     },
                     leading: _MediaThumbnail(file: file, size: 52),
-                    title: Text(file.name),
+                    title: Text(_displayName(provider, file)),
                     subtitle: Text(
                       '${file.isVideo ? 'Video' : 'Audio'} • ${file.size}',
                       style: const TextStyle(color: Colors.blueGrey),
@@ -1170,7 +1189,7 @@ Future<void> _showAddToPlaylistSheet(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Add "${file.name}" to playlist',
+                'Add "${_displayName(provider, file)}" to playlist',
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 16),
@@ -1224,7 +1243,7 @@ Future<void> _showAddToPlaylistSheet(
                                 }
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('${file.name} added to ${playlist.name}.')),
+                                    SnackBar(content: Text('${_displayName(provider, file)} added to ${playlist.name}.')),
                                   );
                                 }
                               },
@@ -1286,7 +1305,7 @@ Future<void> _showAddMediaPickerForPlaylist(
                       return ListTile(
                         contentPadding: EdgeInsets.zero,
                         leading: _MediaThumbnail(file: file, size: 48),
-                        title: Text(file.name),
+                        title: Text(_displayName(provider, file)),
                         subtitle: Text(
                           '${file.isVideo ? 'Video' : 'Audio'} • ${file.size}',
                           style: const TextStyle(color: Colors.blueGrey),
@@ -1519,7 +1538,7 @@ class MediaGridView extends StatelessWidget {
         break;
       case 'delete':
         final shouldDelete = provider.confirmDestructiveActions
-            ? await _showDeleteMediaDialog(context, file.name)
+            ? await _showDeleteMediaDialog(context, _displayName(provider, file))
             : true;
         if (shouldDelete == true) {
           await provider.deleteFile(file);
@@ -1530,30 +1549,42 @@ class MediaGridView extends StatelessWidget {
 
   void _showRenameDialog(BuildContext context, MediaFile file, MediaProvider provider) {
     final controller = TextEditingController(text: file.name);
+    String? errorText;
     showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          backgroundColor: _appSurface,
-          title: const Text('Rename File'),
-          content: TextField(
-            controller: controller, 
-            autofocus: true,
-            style: const TextStyle(color: Colors.white),
-            decoration: const InputDecoration(
-              enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: _appAccent)),
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel', style: TextStyle(color: Colors.blueGrey))),
-            TextButton(
-              onPressed: () {
-                provider.renameFile(file, controller.text);
-                Navigator.pop(context);
-              },
-              child: const Text('Save', style: TextStyle(color: _appAccent)),
-            ),
-          ],
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: _appSurface,
+              title: const Text('Rename File'),
+              content: TextField(
+                controller: controller,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  errorText: errorText,
+                  enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: _appAccent)),
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel', style: TextStyle(color: Colors.blueGrey))),
+                TextButton(
+                  onPressed: () async {
+                    final message = await provider.renameFile(file, controller.text);
+                    if (message != null) {
+                      setDialogState(() => errorText = message);
+                      return;
+                    }
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                    }
+                  },
+                  child: const Text('Save', style: TextStyle(color: _appAccent)),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -1611,31 +1642,26 @@ class MediaGridView extends StatelessWidget {
                 Positioned(
                   left: 0,
                   right: 0,
+                  top: 0,
                   bottom: 0,
                   child: Container(
-                    padding: EdgeInsets.fromLTRB(
-                      isLandscape ? 8 : 10,
-                      isLandscape ? 12 : 16,
-                      isLandscape ? 4 : 6,
-                      isLandscape ? 4 : 6,
-                    ),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
                           Colors.transparent,
-                          Colors.black.withOpacity(0.78),
+                          Colors.black.withOpacity(0.84),
                         ],
                       ),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
+                    child: Stack(
                       children: [
                         if (provider.showFileSize)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 2),
+                          Positioned(
+                            left: isLandscape ? 8 : 10,
+                            right: isLandscape ? 30 : 34,
+                            bottom: isLandscape ? 26 : 30,
                             child: Text(
                               file.size,
                               maxLines: 1,
@@ -1646,67 +1672,72 @@ class MediaGridView extends StatelessWidget {
                               ),
                             ),
                           ),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                file.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: isLandscape ? 12 : 13,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                            PopupMenuButton<String>(
-                              tooltip: 'More options',
-                              color: _appSurface,
-                              padding: EdgeInsets.zero,
-                              constraints: BoxConstraints(
-                                minWidth: isLandscape ? 24 : 28,
-                                minHeight: isLandscape ? 24 : 28,
-                              ),
-                              icon: Icon(
-                                Icons.more_vert,
-                                color: Colors.white70,
-                                size: isLandscape ? 14 : 18,
-                              ),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                              onSelected: (value) => _handleMenuAction(context, file, provider, value),
-                              itemBuilder: (context) => const [
-                                PopupMenuItem<String>(
-                                  value: 'playlist',
-                                  child: _MediaMenuItem(
-                                    icon: Icons.playlist_add,
-                                    label: 'Add to Playlist',
-                                    iconColor: _appAccent,
-                                    textColor: Colors.white,
+                        Positioned(
+                          left: isLandscape ? 8 : 10,
+                          right: isLandscape ? 4 : 6,
+                          bottom: -2,
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _displayName(provider, file),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: isLandscape ? 12 : 13,
+                                    color: Colors.white,
                                   ),
                                 ),
-                                PopupMenuItem<String>(
-                                  value: 'rename',
-                                  child: _MediaMenuItem(
-                                    icon: Icons.edit_outlined,
-                                    label: 'Rename',
-                                    iconColor: _appAccent,
-                                    textColor: Colors.white,
-                                  ),
+                              ),
+                              PopupMenuButton<String>(
+                                tooltip: 'More options',
+                                color: _appSurface,
+                                padding: EdgeInsets.zero,
+                                constraints: BoxConstraints(
+                                  minWidth: isLandscape ? 24 : 28,
+                                  minHeight: isLandscape ? 24 : 28,
                                 ),
-                                PopupMenuItem<String>(
-                                  value: 'delete',
-                                  child: _MediaMenuItem(
-                                    icon: Icons.delete_outline,
-                                    label: 'Delete',
-                                    iconColor: Colors.redAccent,
-                                    textColor: Colors.redAccent,
-                                  ),
+                                icon: Icon(
+                                  Icons.more_vert,
+                                  color: Colors.white70,
+                                  size: isLandscape ? 14 : 18,
                                 ),
-                              ],
-                            ),
-                          ],
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                onSelected: (value) => _handleMenuAction(context, file, provider, value),
+                                itemBuilder: (context) => const [
+                                  PopupMenuItem<String>(
+                                    value: 'playlist',
+                                    child: _MediaMenuItem(
+                                      icon: Icons.playlist_add,
+                                      label: 'Add to Playlist',
+                                      iconColor: _appAccent,
+                                      textColor: Colors.white,
+                                    ),
+                                  ),
+                                  PopupMenuItem<String>(
+                                    value: 'rename',
+                                    child: _MediaMenuItem(
+                                      icon: Icons.edit_outlined,
+                                      label: 'Rename',
+                                      iconColor: _appAccent,
+                                      textColor: Colors.white,
+                                    ),
+                                  ),
+                                  PopupMenuItem<String>(
+                                    value: 'delete',
+                                    child: _MediaMenuItem(
+                                      icon: Icons.delete_outline,
+                                      label: 'Delete',
+                                      iconColor: Colors.redAccent,
+                                      textColor: Colors.redAccent,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
@@ -1739,7 +1770,7 @@ class MediaListView extends StatelessWidget {
         break;
       case 'delete':
         final shouldDelete = provider.confirmDestructiveActions
-            ? await _showDeleteMediaDialog(context, file.name)
+            ? await _showDeleteMediaDialog(context, _displayName(provider, file))
             : true;
         if (shouldDelete == true) {
           await provider.deleteFile(file);
@@ -1750,30 +1781,42 @@ class MediaListView extends StatelessWidget {
 
   void _showRenameDialog(BuildContext context, MediaFile file, MediaProvider provider) {
     final controller = TextEditingController(text: file.name);
+    String? errorText;
     showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          backgroundColor: _appSurface,
-          title: const Text('Rename File'),
-          content: TextField(
-            controller: controller, 
-            autofocus: true,
-            style: const TextStyle(color: Colors.white),
-            decoration: const InputDecoration(
-              enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: _appAccent)),
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel', style: TextStyle(color: Colors.blueGrey))),
-            TextButton(
-              onPressed: () {
-                provider.renameFile(file, controller.text);
-                Navigator.pop(context);
-              },
-              child: const Text('Save', style: TextStyle(color: _appAccent)),
-            ),
-          ],
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: _appSurface,
+              title: const Text('Rename File'),
+              content: TextField(
+                controller: controller,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  errorText: errorText,
+                  enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: _appAccent)),
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel', style: TextStyle(color: Colors.blueGrey))),
+                TextButton(
+                  onPressed: () async {
+                    final message = await provider.renameFile(file, controller.text);
+                    if (message != null) {
+                      setDialogState(() => errorText = message);
+                      return;
+                    }
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                    }
+                  },
+                  child: const Text('Save', style: TextStyle(color: _appAccent)),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -1816,7 +1859,7 @@ class MediaListView extends StatelessWidget {
           dense: isLandscape,
           minVerticalPadding: isLandscape ? 2 : 4,
           title: Text(
-            file.name,
+            _displayName(provider, file),
             style: TextStyle(fontSize: isLandscape ? 14 : 16),
           ),
           subtitle: provider.showFileSize
@@ -2003,6 +2046,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   String? _initError;
   late final bool _autoPlay;
   late final bool _loopVideos;
+  late final String _displayTitle;
   bool _isEnteringPip = false;
   bool? _lastAutoPipEnabled;
   int? _lastPipWidth;
@@ -2014,6 +2058,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     final provider = Provider.of<MediaProvider>(context, listen: false);
     _autoPlay = provider.autoPlayVideos;
     _loopVideos = provider.loopVideos;
+    _displayTitle = provider.displayName(widget.file);
     _initializePlayer();
   }
 
@@ -2096,7 +2141,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         allowMuting: false,
         aspectRatio: safeAspectRatio,
         customControls: MediaPlayerControls(
-          title: widget.file.name,
+          title: _displayTitle,
           onBackPressed: () {
             if (mounted) {
               Navigator.of(context).maybePop();

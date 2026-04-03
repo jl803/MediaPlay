@@ -41,11 +41,24 @@ class Playlist {
 }
 
 class MediaProvider extends ChangeNotifier {
+  static const Set<String> _supportedExtensions = {
+    'mp3',
+    'wav',
+    'm4a',
+    'aac',
+    'ogg',
+    'flac',
+    'mp4',
+    'mkv',
+    'mov',
+    'webm',
+  };
   static const _prefViewMode = 'viewMode';
   static const _prefAutoPlayVideos = 'autoPlayVideos';
   static const _prefLoopVideos = 'loopVideos';
   static const _prefAutoPictureInPicture = 'autoPictureInPicture';
   static const _prefShowFileSize = 'showFileSize';
+  static const _prefShowFileExtensions = 'showFileExtensions';
   static const _prefConfirmDestructiveActions = 'confirmDestructiveActions';
 
   List<MediaFile> _mediaFiles = [];
@@ -59,6 +72,7 @@ class MediaProvider extends ChangeNotifier {
   bool _loopVideos = false;
   bool _autoPictureInPicture = true;
   bool _showFileSize = true;
+  bool _showFileExtensions = false;
   bool _confirmDestructiveActions = true;
 
   List<MediaFile> get mediaFiles => _mediaFiles;
@@ -72,6 +86,7 @@ class MediaProvider extends ChangeNotifier {
   bool get loopVideos => _loopVideos;
   bool get autoPictureInPicture => _autoPictureInPicture;
   bool get showFileSize => _showFileSize;
+  bool get showFileExtensions => _showFileExtensions;
   bool get confirmDestructiveActions => _confirmDestructiveActions;
   List<MediaFile> get filteredMediaFiles {
     final query = _searchQuery.trim().toLowerCase();
@@ -105,6 +120,7 @@ class MediaProvider extends ChangeNotifier {
     _loopVideos = prefs.getBool(_prefLoopVideos) ?? false;
     _autoPictureInPicture = prefs.getBool(_prefAutoPictureInPicture) ?? true;
     _showFileSize = prefs.getBool(_prefShowFileSize) ?? true;
+    _showFileExtensions = prefs.getBool(_prefShowFileExtensions) ?? false;
     _confirmDestructiveActions = prefs.getBool(_prefConfirmDestructiveActions) ?? true;
   }
 
@@ -173,6 +189,13 @@ class MediaProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setShowFileExtensions(bool value) async {
+    _showFileExtensions = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefShowFileExtensions, value);
+    notifyListeners();
+  }
+
   Future<void> setConfirmDestructiveActions(bool value) async {
     _confirmDestructiveActions = value;
     final prefs = await SharedPreferences.getInstance();
@@ -180,10 +203,24 @@ class MediaProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> renameFile(MediaFile file, String newName) async {
-    await DatabaseHelper.instance.renameMedia(file.path, newName);
-    file.name = newName;
+  String displayName(MediaFile file) {
+    if (_showFileExtensions) {
+      final extension = p.extension(file.path);
+      return extension.isEmpty ? file.name : '${file.name}$extension';
+    }
+    return file.name;
+  }
+
+  Future<String?> renameFile(MediaFile file, String newName) async {
+    final sanitized = newName.trim();
+    if (sanitized.isEmpty) {
+      return 'File name cannot be empty.';
+    }
+
+    await DatabaseHelper.instance.renameMedia(file.path, sanitized);
+    file.name = sanitized;
     notifyListeners();
+    return null;
   }
 
   Future<String?> createPlaylist(String name) async {
@@ -295,8 +332,7 @@ class MediaProvider extends ChangeNotifier {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         allowMultiple: true,
-        type: FileType.custom,
-        allowedExtensions: ['mp3', 'mp4', 'mkv', 'wav'],
+        type: FileType.media,
       );
 
       if (result != null) {
@@ -307,7 +343,13 @@ class MediaProvider extends ChangeNotifier {
 
         for (var file in result.files) {
           if (file.path != null) {
-            bool isVideo = file.extension == 'mp4' || file.extension == 'mkv';
+            final extension = (file.extension ?? p.extension(file.name).replaceFirst('.', ''))
+                .toLowerCase();
+            if (!_supportedExtensions.contains(extension)) {
+              continue;
+            }
+
+            final isVideo = {'mp4', 'mkv', 'mov', 'webm'}.contains(extension);
             double sizeInMb = file.size / (1024 * 1024);
             
             String nameWithoutExtension = p.basenameWithoutExtension(file.name);
