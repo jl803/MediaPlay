@@ -2,7 +2,7 @@ name: mediaplay
 description: "A media player designed using flutter/dart"
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.0+7
 
 environment:
   sdk: ^3.10.7
