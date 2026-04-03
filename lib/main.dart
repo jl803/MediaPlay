@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'dart:io';
 import 'media_provider.dart';
+import 'media_player_controls.dart';
+import 'audio_player_screen.dart';
 
 const _appBackground = Color(0xFF000000);
 const _appSurface = Color(0xFF121212);
@@ -77,6 +80,17 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
+void _openMediaPlayer(BuildContext context, MediaFile file) {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => file.isVideo
+          ? VideoPlayerScreen(file: file)
+          : AudioPlayerScreen(file: file),
+    ),
+  );
+}
+
 class _AnimatedBottomNavBar extends StatelessWidget {
   final int currentIndex;
   final List<({IconData icon, String label})> items;
@@ -90,13 +104,13 @@ class _AnimatedBottomNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+
     return LayoutBuilder(
       builder: (context, constraints) {
-        final itemWidth = constraints.maxWidth / items.length;
-
         return Container(
           margin: EdgeInsets.zero,
-          height: 74,
+          height: isLandscape ? 48 : 74,
           decoration: BoxDecoration(
             color: const Color(0xFF171C1D),
             border: Border(
@@ -117,23 +131,23 @@ class _AnimatedBottomNavBar extends StatelessWidget {
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 220),
                         curve: Curves.easeOutCubic,
-                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        padding: EdgeInsets.symmetric(vertical: isLandscape ? 2 : 6),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Icon(
                               items[i].icon,
-                              size: 22,
+                              size: isLandscape ? 16 : 22,
                               color: i == currentIndex ? _appAccent : const Color(0xFF8A9599),
                             ),
-                            const SizedBox(height: 5),
+                            SizedBox(height: isLandscape ? 2 : 5),
                             Text(
                               items[i].label,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 color: i == currentIndex ? _appAccent : const Color(0xFF8A9599),
-                                fontSize: 11,
+                                fontSize: isLandscape ? 9 : 11,
                                 fontWeight: i == currentIndex ? FontWeight.w600 : FontWeight.w500,
                                 height: 1,
                               ),
@@ -259,6 +273,12 @@ class SettingsScreen extends StatelessWidget {
                 subtitle: 'Repeat videos continuously',
                 value: provider.loopVideos,
                 onChanged: provider.setLoopVideos,
+              ),
+              _SettingsSwitchRow(
+                title: 'Auto Picture in Picture',
+                subtitle: 'Enter PiP when leaving the app during playback',
+                value: provider.autoPictureInPicture,
+                onChanged: provider.setAutoPictureInPicture,
               ),
             ],
           ),
@@ -421,12 +441,7 @@ class _BrowseRecentRow extends StatelessWidget {
       showDivider: showDivider,
       child: InkWell(
         onTap: () {
-          if (file.isVideo) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => VideoPlayerScreen(file: file)),
-            );
-          }
+          _openMediaPlayer(context, file);
         },
         borderRadius: BorderRadius.circular(10),
         child: Row(
@@ -878,16 +893,7 @@ class PlaylistDetailScreen extends StatelessWidget {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   child: ListTile(
                     onTap: () {
-                      if (file.isVideo) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => VideoPlayerScreen(file: file)),
-                        );
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Audio playback is not implemented yet.')),
-                        );
-                      }
+                      _openMediaPlayer(context, file);
                     },
                     leading: _MediaThumbnail(file: file, size: 52),
                     title: Text(file.name),
@@ -1329,6 +1335,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Widget build(BuildContext context) {
     final provider = Provider.of<MediaProvider>(context);
     final visibleFiles = provider.filteredMediaFiles;
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
 
     if (_searchController.text != provider.searchQuery) {
       _searchController.value = TextEditingValue(
@@ -1339,30 +1346,45 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10.0),
+        padding: EdgeInsets.symmetric(horizontal: isLandscape ? 8.0 : 10.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 14),
+            SizedBox(height: isLandscape ? 6 : 14),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
+                Text(
                   'My Media',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    fontSize: isLandscape ? 18 : 22,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 Row(
                   children: [
                     IconButton(
+                      visualDensity: isLandscape ? VisualDensity.compact : VisualDensity.standard,
+                      constraints: BoxConstraints.tightFor(
+                        width: isLandscape ? 32 : 48,
+                        height: isLandscape ? 32 : 48,
+                      ),
                       icon: Icon(
                         Icons.grid_view_rounded,
+                        size: isLandscape ? 18 : 24,
                         color: provider.viewMode == ViewMode.grid ? _appAccent : Colors.blueGrey,
                       ),
                       onPressed: () => provider.toggleViewMode(ViewMode.grid),
                     ),
                     IconButton(
+                      visualDensity: isLandscape ? VisualDensity.compact : VisualDensity.standard,
+                      constraints: BoxConstraints.tightFor(
+                        width: isLandscape ? 32 : 48,
+                        height: isLandscape ? 32 : 48,
+                      ),
                       icon: Icon(
                         Icons.list,
+                        size: isLandscape ? 18 : 24,
                         color: provider.viewMode == ViewMode.list ? _appAccent : Colors.blueGrey,
                       ),
                       onPressed: () => provider.toggleViewMode(ViewMode.list),
@@ -1371,14 +1393,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            SizedBox(height: isLandscape ? 6 : 10),
             TextField(
               controller: _searchController,
               onChanged: provider.setSearchQuery,
+              style: TextStyle(fontSize: isLandscape ? 14 : 16),
               decoration: InputDecoration(
                 hintText: 'Search your media...',
-                hintStyle: const TextStyle(color: Colors.white38),
-                prefixIcon: const Icon(Icons.search, color: Colors.white30, size: 20),
+                hintStyle: TextStyle(color: Colors.white38, fontSize: isLandscape ? 14 : 16),
+                prefixIcon: Icon(Icons.search, color: Colors.white30, size: isLandscape ? 18 : 20),
                 suffixIcon: provider.searchQuery.isEmpty
                     ? null
                     : IconButton(
@@ -1386,7 +1409,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           provider.setSearchQuery('');
                           _searchController.clear();
                         },
-                        icon: const Icon(Icons.close, color: Colors.white30, size: 18),
+                        icon: Icon(Icons.close, color: Colors.white30, size: isLandscape ? 16 : 18),
                       ),
                 filled: true,
                 fillColor: Colors.white.withOpacity(0.035),
@@ -1394,12 +1417,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   borderRadius: BorderRadius.circular(10),
                   borderSide: BorderSide.none,
                 ),
-                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                contentPadding: EdgeInsets.symmetric(vertical: isLandscape ? 8 : 12),
+                isDense: isLandscape,
               ),
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: isLandscape ? 8 : 12),
             Wrap(
               spacing: 8,
+              runSpacing: isLandscape ? 4 : 8,
               children: [
                 _LibraryFilterChip(
                   label: 'All',
@@ -1418,8 +1443,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 14),
-            const Divider(color: Colors.white10, thickness: 1),
+            SizedBox(height: isLandscape ? 8 : 14),
+            const Divider(color: Colors.white10, thickness: 1, height: 1),
             Expanded(
               child: provider.mediaFiles.isEmpty
                   ? const EmptyState()
@@ -1538,12 +1563,16 @@ class MediaGridView extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = Provider.of<MediaProvider>(context);
     final files = provider.filteredMediaFiles;
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+    final width = MediaQuery.of(context).size.width;
+    final crossAxisCount = isLandscape ? ((width ~/ 180).clamp(4, 7) as int) : 2;
+
     return GridView.builder(
-      padding: const EdgeInsets.only(top: 10, bottom: 10),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
+      padding: EdgeInsets.only(top: isLandscape ? 6 : 10, bottom: isLandscape ? 6 : 10),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossAxisCount,
+        crossAxisSpacing: isLandscape ? 6 : 8,
+        mainAxisSpacing: isLandscape ? 6 : 8,
         childAspectRatio: 1.45,
       ),
       itemCount: files.length,
@@ -1551,17 +1580,12 @@ class MediaGridView extends StatelessWidget {
         final file = files[index];
         return GestureDetector(
           onTap: () {
-            if (file.isVideo) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => VideoPlayerScreen(file: file)),
-              );
-            }
+            _openMediaPlayer(context, file);
           },
           child: Container(
             decoration: BoxDecoration(
               color: _appSurface,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(isLandscape ? 6 : 8),
               border: Border.all(color: Colors.white.withOpacity(0.05)),
             ),
             clipBehavior: Clip.antiAlias,
@@ -1573,12 +1597,12 @@ class MediaGridView extends StatelessWidget {
                           File(file.thumbnailPath!),
                           fit: BoxFit.cover,
                         )
-                      : Container(
+                        : Container(
                           color: _appBackground,
                           child: Center(
                             child: Icon(
                               file.isVideo ? Icons.play_arrow_rounded : Icons.music_note_rounded,
-                              size: 40,
+                              size: isLandscape ? 28 : 40,
                               color: _appAccent.withOpacity(0.2),
                             ),
                           ),
@@ -1589,7 +1613,12 @@ class MediaGridView extends StatelessWidget {
                   right: 0,
                   bottom: 0,
                   child: Container(
-                    padding: const EdgeInsets.fromLTRB(10, 16, 6, 6),
+                    padding: EdgeInsets.fromLTRB(
+                      isLandscape ? 8 : 10,
+                      isLandscape ? 12 : 16,
+                      isLandscape ? 4 : 6,
+                      isLandscape ? 4 : 6,
+                    ),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
@@ -1611,7 +1640,10 @@ class MediaGridView extends StatelessWidget {
                               file.size,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.white70, fontSize: 11),
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: isLandscape ? 10 : 11,
+                              ),
                             ),
                           ),
                         Row(
@@ -1622,9 +1654,9 @@ class MediaGridView extends StatelessWidget {
                                 file.name,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 13,
+                                  fontSize: isLandscape ? 12 : 13,
                                   color: Colors.white,
                                 ),
                               ),
@@ -1633,8 +1665,15 @@ class MediaGridView extends StatelessWidget {
                               tooltip: 'More options',
                               color: _appSurface,
                               padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                              icon: const Icon(Icons.more_vert, color: Colors.white70, size: 18),
+                              constraints: BoxConstraints(
+                                minWidth: isLandscape ? 24 : 28,
+                                minHeight: isLandscape ? 24 : 28,
+                              ),
+                              icon: Icon(
+                                Icons.more_vert,
+                                color: Colors.white70,
+                                size: isLandscape ? 14 : 18,
+                              ),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                               onSelected: (value) => _handleMenuAction(context, file, provider, value),
                               itemBuilder: (context) => const [
@@ -1744,24 +1783,20 @@ class MediaListView extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = Provider.of<MediaProvider>(context);
     final files = provider.filteredMediaFiles;
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
     return ListView.builder(
-      padding: const EdgeInsets.only(top: 16),
+      padding: EdgeInsets.only(top: isLandscape ? 8 : 16),
       itemCount: files.length,
       itemBuilder: (context, index) {
         final file = files[index];
         return ListTile(
           onTap: () {
-            if (file.isVideo) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => VideoPlayerScreen(file: file)),
-              );
-            }
+            _openMediaPlayer(context, file);
           },
           contentPadding: EdgeInsets.zero,
           leading: Container(
-            width: 50,
-            height: 50,
+            width: isLandscape ? 40 : 50,
+            height: isLandscape ? 40 : 50,
             decoration: BoxDecoration(
               color: _appSurface,
               borderRadius: BorderRadius.circular(8),
@@ -1774,23 +1809,29 @@ class MediaListView extends StatelessWidget {
                   )
                 : Icon(
                     file.isVideo ? Icons.play_circle_outline : Icons.music_note,
+                    size: isLandscape ? 20 : 24,
                     color: _appAccent.withOpacity(0.5),
                   ),
           ),
-          title: Text(file.name),
+          dense: isLandscape,
+          minVerticalPadding: isLandscape ? 2 : 4,
+          title: Text(
+            file.name,
+            style: TextStyle(fontSize: isLandscape ? 14 : 16),
+          ),
           subtitle: provider.showFileSize
               ? Text(
                   '${file.isVideo ? 'Video' : 'Audio'} • ${file.size}',
-                  style: const TextStyle(color: Colors.blueGrey),
+                  style: TextStyle(color: Colors.blueGrey, fontSize: isLandscape ? 11 : 13),
                 )
               : Text(
                   file.isVideo ? 'Video' : 'Audio',
-                  style: const TextStyle(color: Colors.blueGrey),
+                  style: TextStyle(color: Colors.blueGrey, fontSize: isLandscape ? 11 : 13),
                 ),
           trailing: PopupMenuButton<String>(
             tooltip: 'More options',
             color: _appSurface,
-            icon: const Icon(Icons.more_vert, color: Colors.blueGrey),
+            icon: Icon(Icons.more_vert, color: Colors.blueGrey, size: isLandscape ? 18 : 24),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             onSelected: (value) => _handleMenuAction(context, file, provider, value),
             itemBuilder: (context) => const [
@@ -1889,13 +1930,18 @@ class _LibraryFilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(999),
         child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          padding: EdgeInsets.symmetric(
+            horizontal: isLandscape ? 10 : 12,
+            vertical: isLandscape ? 5 : 7,
+          ),
           decoration: BoxDecoration(
             color: selected ? _appAccent.withOpacity(0.14) : Colors.white.withOpacity(0.035),
             borderRadius: BorderRadius.circular(999),
@@ -1907,7 +1953,7 @@ class _LibraryFilterChip extends StatelessWidget {
             label,
             style: TextStyle(
               color: selected ? _appAccent : Colors.white70,
-              fontSize: 12,
+              fontSize: isLandscape ? 11 : 12,
               fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
             ),
           ),
@@ -1951,11 +1997,16 @@ class VideoPlayerScreen extends StatefulWidget {
 }
 
 class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
+  static const MethodChannel _pipChannel = MethodChannel('mediaplay/pip');
   VideoPlayerController? _videoPlayerController;
   ChewieController? _chewieController;
   String? _initError;
   late final bool _autoPlay;
   late final bool _loopVideos;
+  bool _isEnteringPip = false;
+  bool? _lastAutoPipEnabled;
+  int? _lastPipWidth;
+  int? _lastPipHeight;
 
   @override
   void initState() {
@@ -1964,6 +2015,62 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     _autoPlay = provider.autoPlayVideos;
     _loopVideos = provider.loopVideos;
     _initializePlayer();
+  }
+
+  Future<void> _enterPictureInPicture() async {
+    final controller = _videoPlayerController;
+    if (_isEnteringPip || !Platform.isAndroid || controller == null || !controller.value.isInitialized) {
+      return;
+    }
+
+    _isEnteringPip = true;
+    try {
+      final size = controller.value.size;
+      final width = size.width.isFinite && size.width > 0 ? size.width.round() : 16;
+      final height = size.height.isFinite && size.height > 0 ? size.height.round() : 9;
+
+      await _pipChannel.invokeMethod<void>('enterPictureInPicture', {
+        'aspectRatioWidth': width,
+        'aspectRatioHeight': height,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Failed to enter PiP: ${e.message}');
+    } finally {
+      _isEnteringPip = false;
+    }
+  }
+
+  Future<void> _syncPictureInPictureAvailability() async {
+    final controller = _videoPlayerController;
+    if (!Platform.isAndroid || controller == null || !controller.value.isInitialized) {
+      return;
+    }
+
+    final size = controller.value.size;
+    final width = size.width.isFinite && size.width > 0 ? size.width.round() : 16;
+    final height = size.height.isFinite && size.height > 0 ? size.height.round() : 9;
+    final provider = Provider.of<MediaProvider>(context, listen: false);
+    final enabled = provider.autoPictureInPicture && controller.value.isPlaying;
+
+    if (_lastAutoPipEnabled == enabled &&
+        _lastPipWidth == width &&
+        _lastPipHeight == height) {
+      return;
+    }
+
+    _lastAutoPipEnabled = enabled;
+    _lastPipWidth = width;
+    _lastPipHeight = height;
+
+    try {
+      await _pipChannel.invokeMethod<void>('updateAutoPipState', {
+        'enabled': enabled,
+        'aspectRatioWidth': width,
+        'aspectRatioHeight': height,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Failed to sync PiP state: ${e.message}');
+    }
   }
 
   Future<void> _initializePlayer() async {
@@ -1981,11 +2088,24 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       final safeAspectRatio = (aspectRatio > 0 && aspectRatio.isFinite) ? aspectRatio : (16 / 9);
 
       _videoPlayerController = controller;
+      controller.addListener(_syncPictureInPictureAvailability);
       _chewieController = ChewieController(
         videoPlayerController: controller,
         autoPlay: _autoPlay,
         looping: _loopVideos,
+        allowMuting: false,
         aspectRatio: safeAspectRatio,
+        customControls: MediaPlayerControls(
+          title: widget.file.name,
+          onBackPressed: () {
+            if (mounted) {
+              Navigator.of(context).maybePop();
+            }
+          },
+          onPictureInPicturePressed: Platform.isAndroid
+              ? _enterPictureInPicture
+              : null,
+        ),
         materialProgressColors: ChewieProgressColors(
           playedColor: _appAccent,
           handleColor: _appAccent,
@@ -1993,6 +2113,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           bufferedColor: Colors.white24,
         ),
       );
+      await _syncPictureInPictureAvailability();
       setState(() {});
     } catch (e, st) {
       debugPrint('Video init failed: $e\n$st');
@@ -2006,6 +2127,17 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   @override
   void dispose() {
+    _videoPlayerController?.removeListener(_syncPictureInPictureAvailability);
+    if (Platform.isAndroid) {
+      _pipChannel.invokeMethod<void>('updateAutoPipState', {
+        'enabled': false,
+      }).catchError((Object error) {
+        debugPrint('Failed to disable PiP state: $error');
+      });
+    }
+    _lastAutoPipEnabled = null;
+    _lastPipWidth = null;
+    _lastPipHeight = null;
     _chewieController?.dispose();
     _videoPlayerController?.dispose();
     super.dispose();
@@ -2014,11 +2146,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.file.name),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-      ),
       body: Center(
         child: _initError != null
             ? Padding(

@@ -44,6 +44,7 @@ class MediaProvider extends ChangeNotifier {
   static const _prefViewMode = 'viewMode';
   static const _prefAutoPlayVideos = 'autoPlayVideos';
   static const _prefLoopVideos = 'loopVideos';
+  static const _prefAutoPictureInPicture = 'autoPictureInPicture';
   static const _prefShowFileSize = 'showFileSize';
   static const _prefConfirmDestructiveActions = 'confirmDestructiveActions';
 
@@ -56,6 +57,7 @@ class MediaProvider extends ChangeNotifier {
   String _searchQuery = '';
   bool _autoPlayVideos = true;
   bool _loopVideos = false;
+  bool _autoPictureInPicture = true;
   bool _showFileSize = true;
   bool _confirmDestructiveActions = true;
 
@@ -68,6 +70,7 @@ class MediaProvider extends ChangeNotifier {
   String get searchQuery => _searchQuery;
   bool get autoPlayVideos => _autoPlayVideos;
   bool get loopVideos => _loopVideos;
+  bool get autoPictureInPicture => _autoPictureInPicture;
   bool get showFileSize => _showFileSize;
   bool get confirmDestructiveActions => _confirmDestructiveActions;
   List<MediaFile> get filteredMediaFiles {
@@ -100,6 +103,7 @@ class MediaProvider extends ChangeNotifier {
     _viewMode = (prefs.getString(_prefViewMode) ?? 'grid') == 'list' ? ViewMode.list : ViewMode.grid;
     _autoPlayVideos = prefs.getBool(_prefAutoPlayVideos) ?? true;
     _loopVideos = prefs.getBool(_prefLoopVideos) ?? false;
+    _autoPictureInPicture = prefs.getBool(_prefAutoPictureInPicture) ?? true;
     _showFileSize = prefs.getBool(_prefShowFileSize) ?? true;
     _confirmDestructiveActions = prefs.getBool(_prefConfirmDestructiveActions) ?? true;
   }
@@ -152,6 +156,13 @@ class MediaProvider extends ChangeNotifier {
     _loopVideos = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_prefLoopVideos, value);
+    notifyListeners();
+  }
+
+  Future<void> setAutoPictureInPicture(bool value) async {
+    _autoPictureInPicture = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefAutoPictureInPicture, value);
     notifyListeners();
   }
 
