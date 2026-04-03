@@ -369,7 +369,7 @@ class BrowseScreen extends StatelessWidget {
             children: [
               _SettingsActionRow(
                 title: provider.isPicking ? 'Opening file picker...' : 'Browse device',
-                subtitle: 'Supported formats: MP3, MP4, MKV, WAV',
+                subtitle: 'Supported formats: MP3, WAV, M4A, AAC, OGG, FLAC, MP4, MKV, MOV, WEBM',
                 showDivider: false,
                 onTap: provider.isPicking ? () {} : provider.pickFiles,
               ),
