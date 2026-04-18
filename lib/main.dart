@@ -2052,6 +2052,43 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   int? _lastPipWidth;
   int? _lastPipHeight;
 
+  List<MediaFile> _videoFiles(MediaProvider provider) {
+    return provider.mediaFiles.where((file) => file.isVideo).toList();
+  }
+
+  bool get _hasPreviousVideo {
+    final provider = Provider.of<MediaProvider>(context, listen: false);
+    final videos = _videoFiles(provider);
+    final currentIndex = videos.indexWhere((file) => file.path == widget.file.path);
+    return currentIndex > 0;
+  }
+
+  bool get _hasNextVideo {
+    final provider = Provider.of<MediaProvider>(context, listen: false);
+    final videos = _videoFiles(provider);
+    final currentIndex = videos.indexWhere((file) => file.path == widget.file.path);
+    return currentIndex != -1 && currentIndex < videos.length - 1;
+  }
+
+  Future<void> _openAdjacentVideo(int offset) async {
+    final provider = Provider.of<MediaProvider>(context, listen: false);
+    final videos = _videoFiles(provider);
+    final currentIndex = videos.indexWhere((file) => file.path == widget.file.path);
+    if (currentIndex == -1) {
+      return;
+    }
+
+    final nextIndex = currentIndex + offset;
+    if (nextIndex < 0 || nextIndex >= videos.length) {
+      return;
+    }
+
+    final target = videos[nextIndex];
+    await Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (context) => VideoPlayerScreen(file: target)),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -2149,6 +2186,12 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           },
           onPictureInPicturePressed: Platform.isAndroid
               ? _enterPictureInPicture
+              : null,
+          onPreviousVideoPressed: _hasPreviousVideo
+              ? () => _openAdjacentVideo(-1)
+              : null,
+          onNextVideoPressed: _hasNextVideo
+              ? () => _openAdjacentVideo(1)
               : null,
         ),
         materialProgressColors: ChewieProgressColors(

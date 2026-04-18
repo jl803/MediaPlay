@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:chewie/chewie.dart';
 import 'package:chewie/src/center_play_button.dart';
-import 'package:chewie/src/center_seek_button.dart';
 import 'package:chewie/src/helpers/utils.dart';
 import 'package:chewie/src/material/material_progress_bar.dart';
 import 'package:chewie/src/material/widgets/options_dialog.dart';
@@ -18,12 +17,16 @@ class MediaPlayerControls extends StatefulWidget {
   final String title;
   final VoidCallback onBackPressed;
   final Future<void> Function()? onPictureInPicturePressed;
+  final VoidCallback? onPreviousVideoPressed;
+  final VoidCallback? onNextVideoPressed;
 
   const MediaPlayerControls({
     super.key,
     required this.title,
     required this.onBackPressed,
     this.onPictureInPicturePressed,
+    this.onPreviousVideoPressed,
+    this.onNextVideoPressed,
   });
 
   @override
@@ -436,41 +439,95 @@ class _MediaPlayerControlsState extends State<MediaPlayerControls>
       child: Container(
         alignment: Alignment.center,
         color: Colors.transparent,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Stack(
+          alignment: Alignment.center,
           children: [
-            if (!isFinished && !chewieController.isLive)
-              CenterSeekButton(
-                iconData: Icons.replay_10,
-                backgroundColor: Colors.black54,
-                iconColor: Colors.white,
-                show: showPlayButton,
-                fadeDuration: chewieController.materialSeekButtonFadeDuration,
-                iconSize: chewieController.materialSeekButtonSize,
-                onPressed: _seekBackward,
-              ),
-            Container(
-              margin: EdgeInsets.symmetric(horizontal: marginSize),
-              child: CenterPlayButton(
-                backgroundColor: Colors.black54,
-                iconColor: Colors.white,
-                isFinished: isFinished,
-                isPlaying: controller.value.isPlaying,
-                show: showPlayButton,
-                onPressed: _playPause,
+            Positioned.fill(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onDoubleTap: !isFinished && !chewieController.isLive
+                          ? _seekBackward
+                          : null,
+                    ),
+                  ),
+                  const Expanded(child: SizedBox()),
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onDoubleTap: !isFinished && !chewieController.isLive
+                          ? _seekForward
+                          : null,
+                    ),
+                  ),
+                ],
               ),
             ),
-            if (!isFinished && !chewieController.isLive)
-              CenterSeekButton(
-                iconData: Icons.forward_10,
-                backgroundColor: Colors.black54,
-                iconColor: Colors.white,
-                show: showPlayButton,
-                fadeDuration: chewieController.materialSeekButtonFadeDuration,
-                iconSize: chewieController.materialSeekButtonSize,
-                onPressed: _seekForward,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildCenterActionButton(
+                  icon: Icons.skip_previous_rounded,
+                  show: showPlayButton,
+                  onPressed: widget.onPreviousVideoPressed,
+                ),
+                Container(
+                  margin: EdgeInsets.symmetric(horizontal: marginSize),
+                  child: CenterPlayButton(
+                    backgroundColor: Colors.black54,
+                    iconColor: Colors.white,
+                    isFinished: isFinished,
+                    isPlaying: controller.value.isPlaying,
+                    show: showPlayButton,
+                    onPressed: _playPause,
+                  ),
+                ),
+                _buildCenterActionButton(
+                  icon: Icons.skip_next_rounded,
+                  show: showPlayButton,
+                  onPressed: widget.onNextVideoPressed,
+                ),
+              ],
+            ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCenterActionButton({
+    required IconData icon,
+    required bool show,
+    required VoidCallback? onPressed,
+  }) {
+    final enabled = onPressed != null;
+    return AnimatedOpacity(
+      opacity: show ? 1.0 : 0.0,
+      duration: const Duration(milliseconds: 300),
+      child: IgnorePointer(
+        ignoring: !show,
+        child: Container(
+          margin: EdgeInsets.symmetric(horizontal: marginSize),
+          child: IconButton(
+            onPressed: () {
+              if (!enabled) {
+                return;
+              }
+              _cancelAndRestartTimer();
+              onPressed();
+            },
+            style: IconButton.styleFrom(
+              backgroundColor: enabled ? Colors.black54 : Colors.black26,
+              foregroundColor: enabled ? Colors.white : Colors.white38,
+              fixedSize: Size.square(chewieController.materialSeekButtonSize),
+            ),
+            icon: Icon(
+              icon,
+              size: chewieController.materialSeekButtonSize * 0.55,
+            ),
+          ),
         ),
       ),
     );
