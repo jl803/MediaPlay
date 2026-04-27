@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:provider/provider.dart';
 
 import 'media_provider.dart';
 
@@ -21,10 +23,14 @@ class AudioPlayerScreen extends StatefulWidget {
 class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
   final AudioPlayer _player = AudioPlayer();
   String? _initError;
+  Timer? _positionSaveTimer;
+  StreamSubscription<PlayerState>? _playerStateSubscription;
+  late final MediaProvider _mediaProvider;
 
   @override
   void initState() {
     super.initState();
+    _mediaProvider = Provider.of<MediaProvider>(context, listen: false);
     _initializeAudio();
   }
 
@@ -36,6 +42,27 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
       }
 
       await _player.setFilePath(widget.file.path);
+      final savedPosition = await _mediaProvider.getSavedPlaybackPosition(widget.file.path);
+      if (savedPosition != null) {
+        final duration = _player.duration;
+        final maxResumePosition = duration != null && duration > const Duration(seconds: 1)
+            ? duration - const Duration(seconds: 1)
+            : Duration.zero;
+        final safeResumePosition =
+            savedPosition <= maxResumePosition ? savedPosition : maxResumePosition;
+        if (safeResumePosition > Duration.zero) {
+          await _player.seek(safeResumePosition);
+        }
+      }
+
+      _playerStateSubscription = _player.playerStateStream.listen((state) {
+        if (state.processingState == ProcessingState.completed) {
+          _mediaProvider.clearPlaybackPosition(widget.file.path);
+        }
+      });
+      _positionSaveTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+        _saveAudioPlaybackPosition();
+      });
       await _player.play();
     } catch (e) {
       if (!mounted) return;
@@ -47,8 +74,20 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
 
   @override
   void dispose() {
+    _positionSaveTimer?.cancel();
+    _playerStateSubscription?.cancel();
+    _saveAudioPlaybackPosition();
     _player.dispose();
     super.dispose();
+  }
+
+  Future<void> _saveAudioPlaybackPosition() async {
+    final duration = _player.duration;
+    await _mediaProvider.savePlaybackPosition(
+      widget.file.path,
+      _player.position,
+      duration: duration,
+    );
   }
 
   Future<void> _togglePlayback() async {

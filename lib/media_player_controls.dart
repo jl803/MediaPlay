@@ -15,6 +15,7 @@ import 'package:video_player/video_player.dart';
 
 class MediaPlayerControls extends StatefulWidget {
   final String title;
+  final int doubleTapSeekSeconds;
   final VoidCallback onBackPressed;
   final Future<void> Function()? onPictureInPicturePressed;
   final VoidCallback? onPreviousVideoPressed;
@@ -23,6 +24,7 @@ class MediaPlayerControls extends StatefulWidget {
   const MediaPlayerControls({
     super.key,
     required this.title,
+    required this.doubleTapSeekSeconds,
     required this.onBackPressed,
     this.onPictureInPicturePressed,
     this.onPreviousVideoPressed,
@@ -693,11 +695,11 @@ class _MediaPlayerControlsState extends State<MediaPlayerControls>
   }
 
   void _seekBackward() {
-    _seekRelative(const Duration(seconds: -10));
+    _seekRelative(Duration(seconds: -widget.doubleTapSeekSeconds));
   }
 
   void _seekForward() {
-    _seekRelative(const Duration(seconds: 10));
+    _seekRelative(Duration(seconds: widget.doubleTapSeekSeconds));
   }
 
   void _startHideTimer() {

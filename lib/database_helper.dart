@@ -20,7 +20,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -34,7 +34,8 @@ class DatabaseHelper {
         path TEXT NOT NULL,
         isVideo INTEGER NOT NULL,
         size TEXT NOT NULL,
-        thumbnailPath TEXT
+        thumbnailPath TEXT,
+        originalThumbnailPath TEXT
       )
     ''');
 
@@ -77,6 +78,11 @@ class DatabaseHelper {
         )
       ''');
     }
+
+    if (oldVersion < 3) {
+      await db.execute('ALTER TABLE media ADD COLUMN originalThumbnailPath TEXT');
+      await db.execute('UPDATE media SET originalThumbnailPath = thumbnailPath WHERE originalThumbnailPath IS NULL');
+    }
   }
 
   Future<int> insertMedia(MediaFile file) async {
@@ -87,6 +93,7 @@ class DatabaseHelper {
       'isVideo': file.isVideo ? 1 : 0,
       'size': file.size,
       'thumbnailPath': file.thumbnailPath,
+      'originalThumbnailPath': file.originalThumbnailPath,
     });
   }
 
@@ -100,7 +107,18 @@ class DatabaseHelper {
       isVideo: (json['isVideo'] as int) == 1,
       size: json['size'] as String,
       thumbnailPath: json['thumbnailPath'] as String?,
+      originalThumbnailPath: json['originalThumbnailPath'] as String?,
     )).toList();
+  }
+
+  Future<int> updateMediaThumbnailPath(String path, String? thumbnailPath) async {
+    final db = await instance.database;
+    return await db.update(
+      'media',
+      {'thumbnailPath': thumbnailPath},
+      where: 'path = ?',
+      whereArgs: [path],
+    );
   }
 
   Future<int> deleteMedia(String path) async {
@@ -192,7 +210,7 @@ class DatabaseHelper {
       final playlistId = row['id'] as int;
       final mediaRows = await db.rawQuery(
         '''
-        SELECT m.name, m.path, m.isVideo, m.size, m.thumbnailPath
+        SELECT m.name, m.path, m.isVideo, m.size, m.thumbnailPath, m.originalThumbnailPath
         FROM playlist_media pm
         INNER JOIN media m ON m.path = pm.mediaPath
         WHERE pm.playlistId = ?
@@ -214,6 +232,7 @@ class DatabaseHelper {
                   isVideo: (json['isVideo'] as int) == 1,
                   size: json['size'] as String,
                   thumbnailPath: json['thumbnailPath'] as String?,
+                  originalThumbnailPath: json['originalThumbnailPath'] as String?,
                 ),
               )
               .toList(),

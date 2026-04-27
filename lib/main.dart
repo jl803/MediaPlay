@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -265,6 +266,11 @@ class SettingsScreen extends StatelessWidget {
                 title: 'Default view',
                 subtitle: defaultViewLabel,
                 onTap: () => _showDefaultViewPicker(context, provider),
+              ),
+              _SettingsActionRow(
+                title: 'Double-tap seek',
+                subtitle: '${provider.doubleTapSeekSeconds} seconds',
+                onTap: () => _showDoubleTapSeekPicker(context, provider),
               ),
               _SettingsSwitchRow(
                 title: 'Autoplay videos',
@@ -666,6 +672,37 @@ Future<void> _showDefaultViewPicker(BuildContext context, MediaProvider provider
                 if (context.mounted) Navigator.pop(context);
               },
             ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+Future<void> _showDoubleTapSeekPicker(BuildContext context, MediaProvider provider) async {
+  const options = [5, 10, 15, 30];
+
+  await showModalBottomSheet(
+    context: context,
+    backgroundColor: _appSurface,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (context) {
+      return SafeArea(
+        child: Wrap(
+          children: [
+            for (final seconds in options)
+              ListTile(
+                title: Text('$seconds seconds'),
+                trailing: provider.doubleTapSeekSeconds == seconds
+                    ? const Icon(Icons.check, color: _appAccent)
+                    : null,
+                onTap: () async {
+                  await provider.setDoubleTapSeekSeconds(seconds);
+                  if (context.mounted) Navigator.pop(context);
+                },
+              ),
           ],
         ),
       );
@@ -2044,13 +2081,17 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   VideoPlayerController? _videoPlayerController;
   ChewieController? _chewieController;
   String? _initError;
+  Timer? _positionSaveTimer;
+  late final MediaProvider _mediaProvider;
   late final bool _autoPlay;
   late final bool _loopVideos;
+  late final int _doubleTapSeekSeconds;
   late final String _displayTitle;
   bool _isEnteringPip = false;
   bool? _lastAutoPipEnabled;
   int? _lastPipWidth;
   int? _lastPipHeight;
+  bool _didRestoreOriginalThumbnail = false;
 
   List<MediaFile> _videoFiles(MediaProvider provider) {
     return provider.mediaFiles.where((file) => file.isVideo).toList();
@@ -2092,10 +2133,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   @override
   void initState() {
     super.initState();
-    final provider = Provider.of<MediaProvider>(context, listen: false);
-    _autoPlay = provider.autoPlayVideos;
-    _loopVideos = provider.loopVideos;
-    _displayTitle = provider.displayName(widget.file);
+    _mediaProvider = Provider.of<MediaProvider>(context, listen: false);
+    _autoPlay = _mediaProvider.autoPlayVideos;
+    _loopVideos = _mediaProvider.loopVideos;
+    _doubleTapSeekSeconds = _mediaProvider.doubleTapSeekSeconds;
+    _displayTitle = _mediaProvider.displayName(widget.file);
     _initializePlayer();
   }
 
@@ -2164,6 +2206,19 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         return;
       }
 
+      final savedPosition = await _mediaProvider.getSavedPlaybackPosition(widget.file.path);
+      if (savedPosition != null) {
+        final duration = controller.value.duration;
+        final maxResumePosition = duration > const Duration(seconds: 1)
+            ? duration - const Duration(seconds: 1)
+            : Duration.zero;
+        final safeResumePosition =
+            savedPosition <= maxResumePosition ? savedPosition : maxResumePosition;
+        if (safeResumePosition > Duration.zero) {
+          await controller.seekTo(safeResumePosition);
+        }
+      }
+
       await controller.setVolume(1.0);
 
       final aspectRatio = controller.value.aspectRatio;
@@ -2179,6 +2234,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         aspectRatio: safeAspectRatio,
         customControls: MediaPlayerControls(
           title: _displayTitle,
+          doubleTapSeekSeconds: _doubleTapSeekSeconds,
           onBackPressed: () {
             if (mounted) {
               Navigator.of(context).maybePop();
@@ -2201,6 +2257,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           bufferedColor: Colors.white24,
         ),
       );
+      _positionSaveTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+        _saveVideoPlaybackPosition();
+      });
       await _syncPictureInPictureAvailability();
       setState(() {});
     } catch (e, st) {
@@ -2215,6 +2274,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   @override
   void dispose() {
+    _positionSaveTimer?.cancel();
+    _saveVideoPlaybackPosition();
+    _updateVideoThumbnailOnExit();
     _videoPlayerController?.removeListener(_syncPictureInPictureAvailability);
     if (Platform.isAndroid) {
       _pipChannel.invokeMethod<void>('updateAutoPipState', {
@@ -2229,6 +2291,43 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     _chewieController?.dispose();
     _videoPlayerController?.dispose();
     super.dispose();
+  }
+
+  Future<void> _saveVideoPlaybackPosition() async {
+    final controller = _videoPlayerController;
+    if (controller == null || !controller.value.isInitialized) {
+      return;
+    }
+
+    await _mediaProvider.savePlaybackPosition(
+      widget.file.path,
+      controller.value.position,
+      duration: controller.value.duration,
+    );
+  }
+
+  void _updateVideoThumbnailOnExit() {
+    final controller = _videoPlayerController;
+    if (controller == null || !controller.value.isInitialized) {
+      return;
+    }
+
+    final position = controller.value.position;
+    final duration = controller.value.duration;
+    final finished = duration > Duration.zero &&
+        position >= duration - const Duration(seconds: 2);
+
+    if (finished) {
+      if (!_didRestoreOriginalThumbnail) {
+        _didRestoreOriginalThumbnail = true;
+        _mediaProvider.restoreOriginalVideoThumbnail(widget.file);
+      }
+      return;
+    }
+
+    if (position > const Duration(seconds: 1)) {
+      _mediaProvider.updateVideoThumbnailFromPosition(widget.file, position);
+    }
   }
 
   @override

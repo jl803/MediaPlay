@@ -16,6 +16,7 @@ class MediaFile {
   final bool isVideo;
   final String size;
   String? thumbnailPath;
+  String? originalThumbnailPath;
 
   MediaFile({
     required this.name,
@@ -23,6 +24,7 @@ class MediaFile {
     required this.isVideo,
     required this.size,
     this.thumbnailPath,
+    this.originalThumbnailPath,
   });
 }
 
@@ -57,9 +59,11 @@ class MediaProvider extends ChangeNotifier {
   static const _prefAutoPlayVideos = 'autoPlayVideos';
   static const _prefLoopVideos = 'loopVideos';
   static const _prefAutoPictureInPicture = 'autoPictureInPicture';
+  static const _prefDoubleTapSeekSeconds = 'doubleTapSeekSeconds';
   static const _prefShowFileSize = 'showFileSize';
   static const _prefShowFileExtensions = 'showFileExtensions';
   static const _prefConfirmDestructiveActions = 'confirmDestructiveActions';
+  static const _prefPlaybackPositionPrefix = 'playbackPositionMs:';
 
   List<MediaFile> _mediaFiles = [];
   List<Playlist> _playlists = [];
@@ -71,6 +75,7 @@ class MediaProvider extends ChangeNotifier {
   bool _autoPlayVideos = true;
   bool _loopVideos = false;
   bool _autoPictureInPicture = true;
+  int _doubleTapSeekSeconds = 10;
   bool _showFileSize = true;
   bool _showFileExtensions = false;
   bool _confirmDestructiveActions = true;
@@ -85,6 +90,7 @@ class MediaProvider extends ChangeNotifier {
   bool get autoPlayVideos => _autoPlayVideos;
   bool get loopVideos => _loopVideos;
   bool get autoPictureInPicture => _autoPictureInPicture;
+  int get doubleTapSeekSeconds => _doubleTapSeekSeconds;
   bool get showFileSize => _showFileSize;
   bool get showFileExtensions => _showFileExtensions;
   bool get confirmDestructiveActions => _confirmDestructiveActions;
@@ -119,6 +125,7 @@ class MediaProvider extends ChangeNotifier {
     _autoPlayVideos = prefs.getBool(_prefAutoPlayVideos) ?? true;
     _loopVideos = prefs.getBool(_prefLoopVideos) ?? false;
     _autoPictureInPicture = prefs.getBool(_prefAutoPictureInPicture) ?? true;
+    _doubleTapSeekSeconds = prefs.getInt(_prefDoubleTapSeekSeconds) ?? 10;
     _showFileSize = prefs.getBool(_prefShowFileSize) ?? true;
     _showFileExtensions = prefs.getBool(_prefShowFileExtensions) ?? false;
     _confirmDestructiveActions = prefs.getBool(_prefConfirmDestructiveActions) ?? true;
@@ -182,6 +189,13 @@ class MediaProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setDoubleTapSeekSeconds(int value) async {
+    _doubleTapSeekSeconds = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_prefDoubleTapSeekSeconds, value);
+    notifyListeners();
+  }
+
   Future<void> setShowFileSize(bool value) async {
     _showFileSize = value;
     final prefs = await SharedPreferences.getInstance();
@@ -201,6 +215,111 @@ class MediaProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_prefConfirmDestructiveActions, value);
     notifyListeners();
+  }
+
+  Future<Duration?> getSavedPlaybackPosition(String path) async {
+    final prefs = await SharedPreferences.getInstance();
+    final milliseconds = prefs.getInt('$_prefPlaybackPositionPrefix$path');
+    if (milliseconds == null || milliseconds <= 0) {
+      return null;
+    }
+    return Duration(milliseconds: milliseconds);
+  }
+
+  Future<void> savePlaybackPosition(
+    String path,
+    Duration position, {
+    Duration? duration,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = '$_prefPlaybackPositionPrefix$path';
+    final nearStart = position <= const Duration(seconds: 2);
+    final nearEnd = duration != null &&
+        duration > Duration.zero &&
+        position >= duration - const Duration(seconds: 2);
+
+    if (nearStart || nearEnd) {
+      await prefs.remove(key);
+      return;
+    }
+
+    await prefs.setInt(key, position.inMilliseconds);
+  }
+
+  Future<void> clearPlaybackPosition(String path) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('$_prefPlaybackPositionPrefix$path');
+  }
+
+  Future<void> updateVideoThumbnailFromPosition(MediaFile file, Duration position) async {
+    if (!file.isVideo) {
+      return;
+    }
+
+    final appDir = await getApplicationDocumentsDirectory();
+    final thumbFolder = p.join(appDir.path, 'thumbnails');
+    await Directory(thumbFolder).create(recursive: true);
+
+    final previousThumbnailPath = file.thumbnailPath;
+    final newThumbnailPath = await VideoThumbnail.thumbnailFile(
+      video: file.path,
+      thumbnailPath: thumbFolder,
+      imageFormat: ImageFormat.JPEG,
+      maxWidth: 300,
+      quality: 75,
+      timeMs: position.inMilliseconds,
+    );
+
+    if (newThumbnailPath == null) {
+      return;
+    }
+
+    file.thumbnailPath = newThumbnailPath;
+    await DatabaseHelper.instance.updateMediaThumbnailPath(file.path, newThumbnailPath);
+    _syncPlaylistThumbnail(file.path, newThumbnailPath);
+    notifyListeners();
+
+    if (previousThumbnailPath != null &&
+        previousThumbnailPath != file.originalThumbnailPath &&
+        previousThumbnailPath != newThumbnailPath) {
+      await _deleteThumbnailFile(previousThumbnailPath);
+    }
+  }
+
+  Future<void> restoreOriginalVideoThumbnail(MediaFile file) async {
+    if (!file.isVideo) {
+      return;
+    }
+
+    final previousThumbnailPath = file.thumbnailPath;
+    file.thumbnailPath = file.originalThumbnailPath;
+    await DatabaseHelper.instance.updateMediaThumbnailPath(file.path, file.originalThumbnailPath);
+    _syncPlaylistThumbnail(file.path, file.originalThumbnailPath);
+    notifyListeners();
+
+    if (previousThumbnailPath != null &&
+        previousThumbnailPath != file.originalThumbnailPath) {
+      await _deleteThumbnailFile(previousThumbnailPath);
+    }
+  }
+
+  void _syncPlaylistThumbnail(String mediaPath, String? thumbnailPath) {
+    for (final playlist in _playlists) {
+      for (final item in playlist.items.where((entry) => entry.path == mediaPath)) {
+        item.thumbnailPath = thumbnailPath;
+      }
+    }
+  }
+
+  Future<void> _deleteThumbnailFile(String thumbnailPath) async {
+    try {
+      final thumbFile = File(thumbnailPath);
+      if (await thumbFile.exists()) {
+        await thumbFile.delete();
+      }
+    } catch (e) {
+      debugPrint("Error deleting thumbnail file: $e");
+    }
   }
 
   String displayName(MediaFile file) {
@@ -305,14 +424,11 @@ class MediaProvider extends ChangeNotifier {
     
     // 2. Delete the physical thumbnail file from disk if it exists
     if (file.thumbnailPath != null) {
-      try {
-        final thumbFile = File(file.thumbnailPath!);
-        if (await thumbFile.exists()) {
-          await thumbFile.delete();
-        }
-      } catch (e) {
-        debugPrint("Error deleting thumbnail file: $e");
-      }
+      await _deleteThumbnailFile(file.thumbnailPath!);
+    }
+    if (file.originalThumbnailPath != null &&
+        file.originalThumbnailPath != file.thumbnailPath) {
+      await _deleteThumbnailFile(file.originalThumbnailPath!);
     }
 
     // 3. Update UI
@@ -375,6 +491,7 @@ class MediaProvider extends ChangeNotifier {
               isVideo: isVideo,
               size: '${sizeInMb.toStringAsFixed(1)} MB',
               thumbnailPath: thumbPath,
+              originalThumbnailPath: thumbPath,
             );
 
             await DatabaseHelper.instance.insertMedia(mediaFile);
