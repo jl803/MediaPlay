@@ -977,6 +977,9 @@ class _MediaThumbnail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final provider = Provider.of<MediaProvider>(context);
+    final progress = provider.playbackProgressFraction(file.path);
+
     return Container(
       width: size,
       height: size,
@@ -985,15 +988,57 @@ class _MediaThumbnail extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       clipBehavior: Clip.antiAlias,
-      child: file.thumbnailPath != null
-          ? Image.file(
-              File(file.thumbnailPath!),
-              fit: BoxFit.cover,
-            )
-          : Icon(
-              file.isVideo ? Icons.play_circle_outline : Icons.music_note,
-              color: _appAccent.withOpacity(0.65),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: file.thumbnailPath != null
+                ? Image.file(
+                    File(file.thumbnailPath!),
+                    fit: BoxFit.cover,
+                  )
+                : Center(
+                    child: Icon(
+                      file.isVideo ? Icons.play_circle_outline : Icons.music_note,
+                      color: _appAccent.withOpacity(0.65),
+                    ),
+                  ),
+          ),
+          if (progress != null)
+            _ThumbnailProgressBar(
+              progress: progress,
+              height: 2,
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ThumbnailProgressBar extends StatelessWidget {
+  final double progress;
+  final double height;
+
+  const _ThumbnailProgressBar({
+    required this.progress,
+    required this.height,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: Container(
+        height: height,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: FractionallySizedBox(
+            widthFactor: progress,
+            child: Container(color: _appAccent),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1646,6 +1691,7 @@ class MediaGridView extends StatelessWidget {
       itemCount: files.length,
       itemBuilder: (context, index) {
         final file = files[index];
+        final progress = provider.playbackProgressFraction(file.path);
         return GestureDetector(
           onTap: () {
             _openMediaPlayer(context, file);
@@ -1673,9 +1719,9 @@ class MediaGridView extends StatelessWidget {
                               size: isLandscape ? 28 : 40,
                               color: _appAccent.withOpacity(0.2),
                             ),
+                            ),
                           ),
                         ),
-                ),
                 Positioned(
                   left: 0,
                   right: 0,
@@ -1780,6 +1826,11 @@ class MediaGridView extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (progress != null)
+                  _ThumbnailProgressBar(
+                    progress: progress,
+                    height: 2,
+                  ),
               ],
             ),
           ),
@@ -1869,6 +1920,7 @@ class MediaListView extends StatelessWidget {
       itemCount: files.length,
       itemBuilder: (context, index) {
         final file = files[index];
+        final progress = provider.playbackProgressFraction(file.path);
         return ListTile(
           onTap: () {
             _openMediaPlayer(context, file);
@@ -1882,16 +1934,29 @@ class MediaListView extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
             ),
             clipBehavior: Clip.antiAlias,
-            child: file.thumbnailPath != null
-                ? Image.file(
-                    File(file.thumbnailPath!),
-                    fit: BoxFit.cover,
-                  )
-                : Icon(
-                    file.isVideo ? Icons.play_circle_outline : Icons.music_note,
-                    size: isLandscape ? 20 : 24,
-                    color: _appAccent.withOpacity(0.5),
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: file.thumbnailPath != null
+                      ? Image.file(
+                          File(file.thumbnailPath!),
+                          fit: BoxFit.cover,
+                        )
+                      : Center(
+                          child: Icon(
+                            file.isVideo ? Icons.play_circle_outline : Icons.music_note,
+                            size: isLandscape ? 20 : 24,
+                            color: _appAccent.withOpacity(0.5),
+                          ),
+                        ),
+                ),
+                if (progress != null)
+                  _ThumbnailProgressBar(
+                    progress: progress,
+                    height: 2,
                   ),
+              ],
+            ),
           ),
           dense: isLandscape,
           minVerticalPadding: isLandscape ? 2 : 4,
@@ -2092,6 +2157,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   int? _lastPipWidth;
   int? _lastPipHeight;
   bool _didRestoreOriginalThumbnail = false;
+  bool _didPersistExitState = false;
 
   List<MediaFile> _videoFiles(MediaProvider provider) {
     return provider.mediaFiles.where((file) => file.isVideo).toList();
@@ -2125,6 +2191,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     }
 
     final target = videos[nextIndex];
+    await _persistVideoExitState();
     await Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (context) => VideoPlayerScreen(file: target)),
     );
@@ -2235,7 +2302,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         customControls: MediaPlayerControls(
           title: _displayTitle,
           doubleTapSeekSeconds: _doubleTapSeekSeconds,
-          onBackPressed: () {
+          onBackPressed: () async {
+            await _persistVideoExitState();
             if (mounted) {
               Navigator.of(context).maybePop();
             }
@@ -2275,8 +2343,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   @override
   void dispose() {
     _positionSaveTimer?.cancel();
-    _saveVideoPlaybackPosition();
-    _updateVideoThumbnailOnExit();
+    if (!_didPersistExitState) {
+      _persistVideoExitState();
+    }
     _videoPlayerController?.removeListener(_syncPictureInPictureAvailability);
     if (Platform.isAndroid) {
       _pipChannel.invokeMethod<void>('updateAutoPipState', {
@@ -2293,6 +2362,15 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     super.dispose();
   }
 
+  Future<void> _persistVideoExitState() async {
+    if (_didPersistExitState) {
+      return;
+    }
+    _didPersistExitState = true;
+    await _saveVideoPlaybackPosition();
+    await _updateVideoThumbnailOnExit();
+  }
+
   Future<void> _saveVideoPlaybackPosition() async {
     final controller = _videoPlayerController;
     if (controller == null || !controller.value.isInitialized) {
@@ -2306,7 +2384,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     );
   }
 
-  void _updateVideoThumbnailOnExit() {
+  Future<void> _updateVideoThumbnailOnExit() async {
     final controller = _videoPlayerController;
     if (controller == null || !controller.value.isInitialized) {
       return;
@@ -2320,34 +2398,40 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     if (finished) {
       if (!_didRestoreOriginalThumbnail) {
         _didRestoreOriginalThumbnail = true;
-        _mediaProvider.restoreOriginalVideoThumbnail(widget.file);
+        await _mediaProvider.restoreOriginalVideoThumbnail(widget.file);
       }
       return;
     }
 
     if (position > const Duration(seconds: 1)) {
-      _mediaProvider.updateVideoThumbnailFromPosition(widget.file, position);
+      await _mediaProvider.updateVideoThumbnailFromPosition(widget.file, position);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: _initError != null
-            ? Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'Could not play this file.\n$_initError',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white70),
-                ),
-              )
-            : _chewieController != null &&
-                    _videoPlayerController != null &&
-                    _videoPlayerController!.value.isInitialized
-                ? Chewie(controller: _chewieController!)
-                : const CircularProgressIndicator(),
+    return WillPopScope(
+      onWillPop: () async {
+        await _persistVideoExitState();
+        return true;
+      },
+      child: Scaffold(
+        body: Center(
+          child: _initError != null
+              ? Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    'Could not play this file.\n$_initError',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                )
+              : _chewieController != null &&
+                      _videoPlayerController != null &&
+                      _videoPlayerController!.value.isInitialized
+                  ? Chewie(controller: _chewieController!)
+                  : const CircularProgressIndicator(),
+        ),
       ),
     );
   }

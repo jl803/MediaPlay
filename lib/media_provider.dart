@@ -64,6 +64,7 @@ class MediaProvider extends ChangeNotifier {
   static const _prefShowFileExtensions = 'showFileExtensions';
   static const _prefConfirmDestructiveActions = 'confirmDestructiveActions';
   static const _prefPlaybackPositionPrefix = 'playbackPositionMs:';
+  static const _prefPlaybackDurationPrefix = 'playbackDurationMs:';
 
   List<MediaFile> _mediaFiles = [];
   List<Playlist> _playlists = [];
@@ -79,6 +80,8 @@ class MediaProvider extends ChangeNotifier {
   bool _showFileSize = true;
   bool _showFileExtensions = false;
   bool _confirmDestructiveActions = true;
+  final Map<String, int> _savedPlaybackPositionsMs = {};
+  final Map<String, int> _savedPlaybackDurationsMs = {};
 
   List<MediaFile> get mediaFiles => _mediaFiles;
   List<Playlist> get playlists => _playlists;
@@ -129,6 +132,32 @@ class MediaProvider extends ChangeNotifier {
     _showFileSize = prefs.getBool(_prefShowFileSize) ?? true;
     _showFileExtensions = prefs.getBool(_prefShowFileExtensions) ?? false;
     _confirmDestructiveActions = prefs.getBool(_prefConfirmDestructiveActions) ?? true;
+
+    _savedPlaybackPositionsMs
+      ..clear()
+      ..addEntries(
+        prefs
+            .getKeys()
+            .where((key) => key.startsWith(_prefPlaybackPositionPrefix))
+            .map((key) => MapEntry(
+                  key.substring(_prefPlaybackPositionPrefix.length),
+                  prefs.getInt(key) ?? 0,
+                ))
+            .where((entry) => entry.value > 0),
+      );
+
+    _savedPlaybackDurationsMs
+      ..clear()
+      ..addEntries(
+        prefs
+            .getKeys()
+            .where((key) => key.startsWith(_prefPlaybackDurationPrefix))
+            .map((key) => MapEntry(
+                  key.substring(_prefPlaybackDurationPrefix.length),
+                  prefs.getInt(key) ?? 0,
+                ))
+            .where((entry) => entry.value > 0),
+      );
   }
 
   Future<void> loadPlaylists({bool notify = true}) async {
@@ -218,11 +247,17 @@ class MediaProvider extends ChangeNotifier {
   }
 
   Future<Duration?> getSavedPlaybackPosition(String path) async {
+    final cachedMilliseconds = _savedPlaybackPositionsMs[path];
+    if (cachedMilliseconds != null && cachedMilliseconds > 0) {
+      return Duration(milliseconds: cachedMilliseconds);
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final milliseconds = prefs.getInt('$_prefPlaybackPositionPrefix$path');
     if (milliseconds == null || milliseconds <= 0) {
       return null;
     }
+    _savedPlaybackPositionsMs[path] = milliseconds;
     return Duration(milliseconds: milliseconds);
   }
 
@@ -240,15 +275,39 @@ class MediaProvider extends ChangeNotifier {
 
     if (nearStart || nearEnd) {
       await prefs.remove(key);
+      await prefs.remove('$_prefPlaybackDurationPrefix$path');
+      _savedPlaybackPositionsMs.remove(path);
+      _savedPlaybackDurationsMs.remove(path);
+      notifyListeners();
       return;
     }
 
     await prefs.setInt(key, position.inMilliseconds);
+    if (duration != null && duration > Duration.zero) {
+      await prefs.setInt('$_prefPlaybackDurationPrefix$path', duration.inMilliseconds);
+      _savedPlaybackDurationsMs[path] = duration.inMilliseconds;
+    }
+    _savedPlaybackPositionsMs[path] = position.inMilliseconds;
+    notifyListeners();
   }
 
   Future<void> clearPlaybackPosition(String path) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('$_prefPlaybackPositionPrefix$path');
+    await prefs.remove('$_prefPlaybackDurationPrefix$path');
+    _savedPlaybackPositionsMs.remove(path);
+    _savedPlaybackDurationsMs.remove(path);
+    notifyListeners();
+  }
+
+  double? playbackProgressFraction(String path) {
+    final positionMs = _savedPlaybackPositionsMs[path];
+    final durationMs = _savedPlaybackDurationsMs[path];
+    if (positionMs == null || durationMs == null || positionMs <= 0 || durationMs <= 0) {
+      return null;
+    }
+
+    return (positionMs / durationMs).clamp(0.0, 1.0);
   }
 
   Future<void> updateVideoThumbnailFromPosition(MediaFile file, Duration position) async {
@@ -260,10 +319,19 @@ class MediaProvider extends ChangeNotifier {
     final thumbFolder = p.join(appDir.path, 'thumbnails');
     await Directory(thumbFolder).create(recursive: true);
 
-    final previousThumbnailPath = file.thumbnailPath;
+    final currentFile = _mediaFiles.cast<MediaFile?>().firstWhere(
+          (entry) => entry?.path == file.path,
+          orElse: () => null,
+        ) ??
+        file;
+    final previousThumbnailPath = currentFile.thumbnailPath;
+    final uniqueThumbnailPath = p.join(
+      thumbFolder,
+      'resume_${DateTime.now().millisecondsSinceEpoch}.jpg',
+    );
     final newThumbnailPath = await VideoThumbnail.thumbnailFile(
       video: file.path,
-      thumbnailPath: thumbFolder,
+      thumbnailPath: uniqueThumbnailPath,
       imageFormat: ImageFormat.JPEG,
       maxWidth: 300,
       quality: 75,
@@ -274,13 +342,12 @@ class MediaProvider extends ChangeNotifier {
       return;
     }
 
-    file.thumbnailPath = newThumbnailPath;
+    _syncMediaThumbnail(file.path, newThumbnailPath);
     await DatabaseHelper.instance.updateMediaThumbnailPath(file.path, newThumbnailPath);
-    _syncPlaylistThumbnail(file.path, newThumbnailPath);
     notifyListeners();
 
     if (previousThumbnailPath != null &&
-        previousThumbnailPath != file.originalThumbnailPath &&
+        previousThumbnailPath != currentFile.originalThumbnailPath &&
         previousThumbnailPath != newThumbnailPath) {
       await _deleteThumbnailFile(previousThumbnailPath);
     }
@@ -291,19 +358,30 @@ class MediaProvider extends ChangeNotifier {
       return;
     }
 
-    final previousThumbnailPath = file.thumbnailPath;
-    file.thumbnailPath = file.originalThumbnailPath;
-    await DatabaseHelper.instance.updateMediaThumbnailPath(file.path, file.originalThumbnailPath);
-    _syncPlaylistThumbnail(file.path, file.originalThumbnailPath);
+    final currentFile = _mediaFiles.cast<MediaFile?>().firstWhere(
+          (entry) => entry?.path == file.path,
+          orElse: () => null,
+        ) ??
+        file;
+    final previousThumbnailPath = currentFile.thumbnailPath;
+    _syncMediaThumbnail(file.path, currentFile.originalThumbnailPath);
+    await DatabaseHelper.instance.updateMediaThumbnailPath(
+      file.path,
+      currentFile.originalThumbnailPath,
+    );
     notifyListeners();
 
     if (previousThumbnailPath != null &&
-        previousThumbnailPath != file.originalThumbnailPath) {
+        previousThumbnailPath != currentFile.originalThumbnailPath) {
       await _deleteThumbnailFile(previousThumbnailPath);
     }
   }
 
-  void _syncPlaylistThumbnail(String mediaPath, String? thumbnailPath) {
+  void _syncMediaThumbnail(String mediaPath, String? thumbnailPath) {
+    for (final mediaFile in _mediaFiles.where((entry) => entry.path == mediaPath)) {
+      mediaFile.thumbnailPath = thumbnailPath;
+    }
+
     for (final playlist in _playlists) {
       for (final item in playlist.items.where((entry) => entry.path == mediaPath)) {
         item.thumbnailPath = thumbnailPath;
