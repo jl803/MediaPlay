@@ -2,7 +2,7 @@ name: mediaplay
 description: "A media player designed using flutter/dart"
 publish_to: 'none'
 
-version: 1.0.0+11
+version: 1.0.0+12
 
 environment:
   sdk: ^3.10.7
@@ -21,6 +21,8 @@ dependencies:
   path_provider: ^2.1.5
   sqflite: ^2.3.0
   shared_preferences: ^2.5.5
+  firebase_core: ^4.1.1
+  firebase_crashlytics: ^5.0.1
 
 dev_dependencies:
   flutter_test:

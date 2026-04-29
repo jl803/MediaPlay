@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'dart:io';
+import 'firebase_sync_service.dart';
 import 'media_provider.dart';
 import 'media_player_controls.dart';
 import 'audio_player_screen.dart';
@@ -13,7 +14,13 @@ const _appBackground = Color(0xFF000000);
 const _appSurface = Color(0xFF121212);
 const _appAccent = Color(0xFF3B82F6);
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await FirebaseSyncService.instance.initialize();
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    FirebaseSyncService.instance.recordFlutterError(details);
+  };
   runApp(
     ChangeNotifierProvider(
       create: (context) => MediaProvider(),
@@ -53,6 +60,7 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
+  bool _didCheckCrashPrompt = false;
 
   static const List<Widget> _pages = <Widget>[
     LibraryScreen(),
@@ -67,6 +75,77 @@ class _MainScreenState extends State<MainScreen> {
     (icon: Icons.folder_open_rounded, label: 'Browse'),
     (icon: Icons.settings, label: 'Settings'),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showCrashReportPromptIfNeeded();
+    });
+  }
+
+  Future<void> _showCrashReportPromptIfNeeded() async {
+    if (_didCheckCrashPrompt || !mounted) {
+      return;
+    }
+    _didCheckCrashPrompt = true;
+
+    final service = FirebaseSyncService.instance;
+    if (!service.didCrashOnPreviousExecution || !service.hasPendingCrashReport) {
+      return;
+    }
+
+    final sendReport = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: _appSurface,
+          title: const Text('Send crash report?'),
+          content: const Text(
+            'MediaPlay detected that the app crashed last time it was open. Do you want to send the crash report to Firebase Crashlytics?',
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Discard', style: TextStyle(color: Colors.blueGrey)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Send', style: TextStyle(color: _appAccent)),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted || sendReport == null) {
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+    if (sendReport) {
+      final success = await service.sendPendingCrashReport();
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? 'Crash report sent to Crashlytics.'
+                : 'Could not send the crash report.',
+          ),
+        ),
+      );
+    } else {
+      await service.discardPendingCrashReport();
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Crash report discarded.'),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
